@@ -124,84 +124,78 @@ function parseExcel(file) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(firstSheet);
         
-        // Transform JSON to state.employees
-        // Expected format: { Name, Date, TimeIn, TimeOut } or similar
-        processRawData(json);
+        // Get raw array instead of JSON for better control over complex layouts
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        processRawArray(rows);
     };
     reader.readAsArrayBuffer(file);
 }
 
-async function parsePDF(file) {
-    // Basic PDF text extraction
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const data = new Uint8Array(e.target.result);
-        const pdf = await pdfjsLib.getDocument(data).promise;
-        let fullText = "";
-        
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            fullText += content.items.map(item => item.str).join(' ') + "\n";
-        }
-        
-        // Simple heuristic for parsing text (requires specific format)
-        // This is a placeholder for actual pattern matching
-        console.log("PDF Text Extracted:", fullText);
-        alert("ระบบกำลังพัฒนาการอ่าน PDF ที่มีความซับซ้อน แนะนำให้ใช้ Excel เพื่อความแม่นยำ");
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-// Data Processing
-function processRawData(data) {
-    console.log("Raw Data Received:", data);
-    if (!data || data.length === 0) {
-        alert("ไม่พบข้อมูลในไฟล์ หรือรูปแบบไฟล์ไม่ถูกต้อง");
-        return;
-    }
-
+function processRawArray(rows) {
+    console.log("Raw Rows Received:", rows);
     const employeeMap = {};
-    let processedCount = 0;
+    let currentEmployee = null;
+    let lastDate = null;
 
-    data.forEach((row, index) => {
-        // More flexible header matching
-        const findValue = (keys) => {
-            for (let key of keys) {
-                const foundKey = Object.keys(row).find(k => k.trim().toLowerCase() === key.toLowerCase());
-                if (foundKey) return row[foundKey];
+    rows.forEach((row, index) => {
+        if (!row || row.length === 0) return;
+
+        // 1. Detect Employee Header Row
+        // Pattern: ID is usually a number, Name follows it. 
+        // Based on image: Row 4 has ID (col 0) and Name (col 2)
+        const possibleId = String(row[0] || '').trim();
+        const possibleName = String(row[2] || '').trim();
+
+        // If col 0 is a numeric ID and col 2 has a name, it's an employee header
+        if (/^\d{5,}$/.test(possibleId) && possibleName && !possibleName.includes('ชื่อพนักงาน')) {
+            currentEmployee = possibleName;
+            if (!employeeMap[currentEmployee]) {
+                employeeMap[currentEmployee] = { name: currentEmployee, rawScans: {} };
             }
-            return null;
-        };
-
-        const name = findValue(['Name', 'ชื่อ', 'พนักงาน', 'staff', 'employee']);
-        const dateStr = findValue(['Date', 'วันที่', 'day']);
-        const timeIn = findValue(['TimeIn', 'เวลาเข้า', 'เข้า', 'checkin', 'in']);
-        const timeOut = findValue(['TimeOut', 'เวลาออก', 'ออก', 'checkout', 'out']);
-
-        if (!name || !dateStr) {
-            console.warn(`Row ${index} missing Name or Date:`, row);
             return;
         }
 
-        if (!employeeMap[name]) {
-            employeeMap[name] = { name, scans: {} };
-        }
+        if (!currentEmployee) return;
+
+        // 2. Detect Date and Time rows
+        // Col 0: Date (e.g. 03/10/2565)
+        // Col 2: Time (e.g. 07:26 or 16:32)
+        const dateStr = String(row[0] || '').trim();
+        const timeStr = String(row[2] || '').trim();
 
         const date = normalizeDate(dateStr);
-        if (date) {
-            employeeMap[name].scans[date] = { in: String(timeIn || ''), out: String(timeOut || '') };
-            processedCount++;
+        if (date) lastDate = date;
+
+        if (lastDate && /^([01]\d|2[0-3])[:.][0-5]\d/.test(timeStr)) {
+            if (!employeeMap[currentEmployee].rawScans[lastDate]) {
+                employeeMap[currentEmployee].rawScans[lastDate] = [];
+            }
+            employeeMap[currentEmployee].rawScans[lastDate].push(timeStr);
         }
     });
 
-    state.employees = Object.values(employeeMap);
+    // 3. Post-process: Convert rawScans to { in, out }
+    const finalEmployees = Object.values(employeeMap).map(emp => {
+        const scans = {};
+        Object.entries(emp.rawScans).forEach(([date, times]) => {
+            if (times.length > 0) {
+                // Earliest time is IN, latest is OUT
+                const sortedTimes = times.sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+                scans[date] = {
+                    in: sortedTimes[0],
+                    out: sortedTimes.length > 1 ? sortedTimes[sortedTimes.length - 1] : null
+                };
+            }
+        });
+        return { name: emp.name, scans };
+    });
+
+    state.employees = finalEmployees;
     console.log("Processed Employees:", state.employees);
 
     if (state.employees.length === 0) {
-        alert("ไม่สามารถประมวลผลข้อมูลได้ กรุณาตรวจสอบหัวตาราง (Name, Date, TimeIn, TimeOut)");
+        alert("ไม่สามารถประมวลผลข้อมูลได้ กรุณาตรวจสอบว่าไฟล์มีข้อมูลพนักงานและเวลาที่ถูกต้อง");
     } else {
         calculateAll();
         alert(`นำเข้าข้อมูลพนักงาน ${state.employees.length} คน เรียบร้อยแล้ว`);
