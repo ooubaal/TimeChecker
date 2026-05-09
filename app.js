@@ -157,36 +157,93 @@ async function parsePDF(file) {
 
 // Data Processing
 function processRawData(data) {
+    console.log("Raw Data Received:", data);
+    if (!data || data.length === 0) {
+        alert("ไม่พบข้อมูลในไฟล์ หรือรูปแบบไฟล์ไม่ถูกต้อง");
+        return;
+    }
+
     const employeeMap = {};
+    let processedCount = 0;
 
-    data.forEach(row => {
-        const name = row['Name'] || row['ชื่อ'] || row['พนักงาน'];
-        const dateStr = row['Date'] || row['วันที่'];
-        const timeIn = row['TimeIn'] || row['เวลาเข้า'] || row['เข้า'];
-        const timeOut = row['TimeOut'] || row['เวลาออก'] || row['ออก'];
+    data.forEach((row, index) => {
+        // More flexible header matching
+        const findValue = (keys) => {
+            for (let key of keys) {
+                const foundKey = Object.keys(row).find(k => k.trim().toLowerCase() === key.toLowerCase());
+                if (foundKey) return row[foundKey];
+            }
+            return null;
+        };
 
-        if (!name || !dateStr) return;
+        const name = findValue(['Name', 'ชื่อ', 'พนักงาน', 'staff', 'employee']);
+        const dateStr = findValue(['Date', 'วันที่', 'day']);
+        const timeIn = findValue(['TimeIn', 'เวลาเข้า', 'เข้า', 'checkin', 'in']);
+        const timeOut = findValue(['TimeOut', 'เวลาออก', 'ออก', 'checkout', 'out']);
+
+        if (!name || !dateStr) {
+            console.warn(`Row ${index} missing Name or Date:`, row);
+            return;
+        }
 
         if (!employeeMap[name]) {
             employeeMap[name] = { name, scans: {} };
         }
 
-        // Normalize date to YYYY-MM-DD
         const date = normalizeDate(dateStr);
-        employeeMap[name].scans[date] = { in: timeIn, out: timeOut };
+        if (date) {
+            employeeMap[name].scans[date] = { in: String(timeIn || ''), out: String(timeOut || '') };
+            processedCount++;
+        }
     });
 
     state.employees = Object.values(employeeMap);
-    calculateAll();
+    console.log("Processed Employees:", state.employees);
+
+    if (state.employees.length === 0) {
+        alert("ไม่สามารถประมวลผลข้อมูลได้ กรุณาตรวจสอบหัวตาราง (Name, Date, TimeIn, TimeOut)");
+    } else {
+        calculateAll();
+        alert(`นำเข้าข้อมูลพนักงาน ${state.employees.length} คน เรียบร้อยแล้ว`);
+    }
 }
 
 function normalizeDate(str) {
-    // Basic normalization, might need more robust logic
-    const d = new Date(str);
+    if (!str) return null;
+    
+    // If it's already a number (Excel date serial)
+    if (typeof str === 'number') {
+        const date = new Date((str - 25569) * 86400 * 1000);
+        return date.toISOString().split('T')[0];
+    }
+
+    const s = String(str).trim();
+    
+    // Try DD/MM/YYYY or DD-MM-YYYY
+    const parts = s.split(/[/-]/);
+    if (parts.length === 3) {
+        let day, month, year;
+        // Assume DD/MM/YYYY or YYYY/MM/DD
+        if (parts[0].length === 4) { // YYYY
+            [year, month, day] = parts;
+        } else {
+            [day, month, year] = parts;
+        }
+        // Handle Buddhist Era
+        if (parseInt(year) > 2500) year = parseInt(year) - 543;
+        
+        const d = new Date(year, month - 1, day);
+        if (!isNaN(d.getTime())) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+    }
+
+    const d = new Date(s);
     if (!isNaN(d.getTime())) {
         return d.toISOString().split('T')[0];
     }
-    return str; // Return as is if failed
+    
+    return null;
 }
 
 // Attendance Calculation Engine
@@ -289,9 +346,23 @@ function calculateAll() {
 }
 
 function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    const [hrs, mins] = timeStr.split(/[:.]/).map(Number);
-    return (hrs * 60) + mins;
+    if (!timeStr || timeStr === 'undefined' || timeStr === 'null') return 0;
+    
+    // Clean string and handle both . and :
+    const cleanStr = String(timeStr).trim().replace(/[^\d:.]/g, '');
+    const parts = cleanStr.split(/[:.]/).map(Number);
+    
+    if (parts.length >= 2) {
+        const [hrs, mins] = parts;
+        return (hrs * 60) + (mins || 0);
+    }
+    
+    // Fallback if only hours or something weird
+    if (parts.length === 1 && !isNaN(parts[0])) {
+        return parts[0] * 60;
+    }
+    
+    return 0;
 }
 
 function renderTable() {
