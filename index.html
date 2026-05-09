@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Time Check - ระบบตรวจวันลาพนักงาน</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+</head>
+<body>
+    <aside>
+        <div class="logo">WORK TIME CHECK</div>
+        
+        <div class="config-section">
+            <label for="monthYear">เดือนและปีที่ตรวจสอบ</label>
+            <div style="display: flex; gap: 0.5rem;">
+                <select id="monthSelect">
+                    <option value="0">มกราคม</option>
+                    <option value="1">กุมภาพันธ์</option>
+                    <option value="2">มีนาคม</option>
+                    <option value="3">เมษายน</option>
+                    <option value="4">พฤษภาคม</option>
+                    <option value="5">มิถุนายน</option>
+                    <option value="6">กรกฎาคม</option>
+                    <option value="7">สิงหาคม</option>
+                    <option value="8">กันยายน</option>
+                    <option value="9">ตุลาคม</option>
+                    <option value="10">พฤศจิกายน</option>
+                    <option value="11">ธันวาคม</option>
+                </select>
+                <input type="number" id="yearSelect" value="2024" style="width: 100px;">
+            </div>
+        </div>
+
+        <div class="config-section">
+            <label>วันหยุดนักขัตฤกษ์ (Manual)</label>
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="number" id="holidayDate" placeholder="วันที่" min="1" max="31">
+                <button class="btn btn-primary" id="addHolidayBtn">+</button>
+            </div>
+            <div class="holiday-list" id="holidayList">
+                <!-- Holidays will appear here -->
+            </div>
+        </div>
+
+        <div class="config-section" style="margin-top: auto;">
+            <button class="btn btn-primary" id="exportBtn" style="width: 100%;">Export PDF/Excel</button>
+        </div>
+    </aside>
+
+    <main>
+        <section class="upload-section">
+            <div class="upload-area" id="dropZone">
+                <h2>อัพโหลดไฟล์ข้อมูลพนักงาน</h2>
+                <p>ลากไฟล์ PDF หรือ Excel มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+                <input type="file" id="fileInput" hidden accept=".pdf,.xlsx,.xls">
+            </div>
+        </section>
+
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="label">จำนวนพนักงานทั้งหมด</div>
+                <div class="value" id="totalStaff">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">สายรวม (ครั้ง)</div>
+                <div class="value" id="totalLate" style="color: var(--danger);">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">OT รวม (ชั่วโมง)</div>
+                <div class="value" id="totalOT" style="color: var(--success);">0</div>
+            </div>
+        </section>
+
+        <section class="table-container">
+            <table id="summaryTable">
+                <thead>
+                    <tr>
+                        <th>ลำดับ</th>
+                        <th>ชื่อ-นามสกุล</th>
+                        <th>มาสาย (นาที)</th>
+                        <th>ออกก่อน (นาที)</th>
+                        <th>ลาเช้า/บ่าย</th>
+                        <th>ขาดงาน</th>
+                        <th>OT (ชม.)</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Data will be injected here -->
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
