@@ -1,7 +1,7 @@
 // State management
 const state = {
     selectedMonth: new Date().getMonth(),
-    selectedYear: new Date().getFullYear(),
+    selectedYear: new Date().getFullYear() + 543, // Default to B.E.
     holidays: [], // List of dates (1-31)
     employees: [], // { name: '', scans: { 'YYYY-MM-DD': { in: '', out: '' } } }
     summary: [] // { name: '', late: 0, early: 0, leave: 0, absence: 0, ot: 0 }
@@ -138,17 +138,41 @@ function processRawArray(rows) {
     let currentEmployee = null;
     let lastDate = null;
 
+    // Keywords for detection
+    const idKeywords = ['รหัสพนักงาน', 'รหัสบัตร', 'id', 'employee id', 'staff no'];
+    const nameKeywords = ['ชื่อพนักงาน', 'ชื่อ', 'name', 'employee name', 'staff name'];
+    const dateKeywords = ['วันที่', 'date', 'day'];
+    const timeKeywords = ['เวลา', 'time', 'clock'];
+
+    // Dynamic indices
+    let colIndices = { id: 0, name: 2, date: 0, time: 2 };
+
+    // Attempt to detect column indices from the first few rows
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const row = rows[i];
+        if (!row) continue;
+        row.forEach((cell, idx) => {
+            const val = String(cell || '').toLowerCase().trim();
+            if (idKeywords.some(k => val.includes(k))) colIndices.id = idx;
+            if (nameKeywords.some(k => val.includes(k))) colIndices.name = idx;
+            if (dateKeywords.some(k => val.includes(k))) colIndices.date = idx;
+            if (timeKeywords.some(k => val.includes(k))) colIndices.time = idx;
+        });
+    }
+
+    console.log("Detected Column Indices:", colIndices);
+
     rows.forEach((row, index) => {
         if (!row || row.length === 0) return;
 
-        // 1. Detect Employee Header Row
-        // Pattern: ID is usually a number, Name follows it. 
-        // Based on image: Row 4 has ID (col 0) and Name (col 2)
-        const possibleId = String(row[0] || '').trim();
-        const possibleName = String(row[2] || '').trim();
+        const possibleId = String(row[colIndices.id] || '').trim();
+        const possibleName = String(row[colIndices.name] || '').trim();
 
-        // If col 0 is a numeric ID and col 2 has a name, it's an employee header
-        if (/^\d{5,}$/.test(possibleId) && possibleName && !possibleName.includes('ชื่อพนักงาน')) {
+        // Detect Employee Header Row
+        const isHeader = nameKeywords.some(k => possibleName.toLowerCase().includes(k)) || 
+                         idKeywords.some(k => possibleId.toLowerCase().includes(k));
+
+        if (/^\d{5,}$/.test(possibleId) && possibleName && !isHeader) {
             currentEmployee = possibleName;
             if (!employeeMap[currentEmployee]) {
                 employeeMap[currentEmployee] = { name: currentEmployee, rawScans: {} };
@@ -158,16 +182,15 @@ function processRawArray(rows) {
 
         if (!currentEmployee) return;
 
-        // 2. Detect Date and Time rows
-        // Col 0: Date (e.g. 03/10/2565)
-        // Col 2: Time (e.g. 07:26 or 16:32)
-        const dateStr = String(row[0] || '').trim();
-        const timeStr = String(row[2] || '').trim();
+        // Detect Date and Time rows
+        const dateStr = String(row[colIndices.date] || '').trim();
+        const timeStr = String(row[colIndices.time] || '').trim();
 
         const date = normalizeDate(dateStr);
         if (date) lastDate = date;
 
-        if (lastDate && /^([01]\d|2[0-3])[:.][0-5]\d/.test(timeStr)) {
+        // Pattern for time: HH:MM or HH.MM
+        if (lastDate && /^([01]\d|2[0-3]| \d)[:.][0-5]\d/.test(timeStr)) {
             if (!employeeMap[currentEmployee].rawScans[lastDate]) {
                 employeeMap[currentEmployee].rawScans[lastDate] = [];
             }
@@ -244,7 +267,8 @@ function normalizeDate(str) {
 function calculateAll() {
     if (state.employees.length === 0) return;
 
-    const daysInMonth = new Date(state.selectedYear, state.selectedMonth + 1, 0).getDate();
+    const yearCE = state.selectedYear - 543;
+    const daysInMonth = new Date(yearCE, state.selectedMonth + 1, 0).getDate();
     const results = [];
 
     state.employees.forEach(emp => {
@@ -260,10 +284,11 @@ function calculateAll() {
         };
 
         for (let day = 1; day <= daysInMonth; day++) {
-            const dateStr = `${state.selectedYear}-${String(state.selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            // Internal logic uses C.E. for consistency
+            const dateStr = `${yearCE}-${String(state.selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const scan = emp.scans[dateStr];
             
-            const isWeekend = new Date(state.selectedYear, state.selectedMonth, day).getDay() % 6 === 0;
+            const isWeekend = new Date(yearCE, state.selectedMonth, day).getDay() % 6 === 0;
             const isHoliday = state.holidays.includes(day);
             const isWorkDay = !isWeekend && !isHoliday;
 
